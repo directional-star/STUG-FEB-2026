@@ -1,0 +1,1574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesser Known, Yet Powerful SQL Features in Snowflake — STUG 2026</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f8f9fa;
+            --text-primary: #1a1a2e;
+            --text-secondary: #5a5a6e;
+            --text-muted: #8a8a9e;
+            --accent: #24b0c9;
+            --accent-light: #e6f7fa;
+            --code-bg: #1e1e2e;
+            --code-border: #2d2d3e;
+            --border: #e2e4e8;
+            --border-light: #f0f1f4;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html, body {
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+
+        .presentation {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .slide {
+            width: 100vw;
+            height: 100vh;
+            min-height: 100vh;
+            display: none;
+            flex-direction: column;
+            padding: 50px 90px 90px 90px;
+            position: relative;
+            overflow: hidden;
+            background: var(--bg-primary);
+        }
+
+        .slide.active { display: flex; }
+
+        @media print {
+            @page {
+                size: 1280px 720px landscape;
+                margin: 0;
+            }
+            .slide {
+                display: flex !important;
+                page-break-after: always;
+                break-after: page;
+                overflow: visible;
+                width: 1280px;
+                height: 720px;
+                min-height: 720px;
+                box-sizing: border-box;
+            }
+            .slide:last-child {
+                page-break-after: auto;
+            }
+            .nav-controls, .progress-bar, .keyboard-hint {
+                display: none !important;
+            }
+            body {
+                overflow: visible;
+            }
+            .presentation {
+                height: auto;
+                overflow: visible;
+            }
+        }
+
+        /* Title Slide */
+        .slide.title-slide {
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+        }
+
+        .slide.title-slide::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 8px;
+            height: 100%;
+            background: var(--accent);
+        }
+
+        .title-badge {
+            display: inline-block;
+            background: var(--accent-light);
+            color: var(--accent);
+            font-size: 0.875rem;
+            font-weight: 600;
+            padding: 8px 20px;
+            border-radius: 100px;
+            margin-bottom: 32px;
+            letter-spacing: 0.05em;
+        }
+
+        .slide.title-slide h1 {
+            font-size: clamp(3rem, 5vw, 4.5rem);
+            font-weight: 700;
+            line-height: 1.1;
+            margin-bottom: 24px;
+        }
+
+        .slide.title-slide .subtitle {
+            font-size: clamp(1.25rem, 2vw, 1.75rem);
+            color: var(--text-secondary);
+            margin-bottom: 60px;
+        }
+
+        .speaker-info { display: flex; flex-direction: column; gap: 8px; }
+        .speaker-name { font-size: 1.25rem; font-weight: 600; }
+        .speaker-role { font-size: 1rem; color: var(--text-muted); }
+        .event-badge { margin-top: 40px; padding: 12px 24px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.875rem; color: var(--text-muted); }
+
+        /* Slide Header */
+        .slide-header {
+            margin-bottom: 28px;
+            padding-left: 20px;
+            border-left: 4px solid var(--accent);
+            position: relative;
+        }
+
+        .slide-number {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.7rem;
+            color: var(--accent);
+            font-weight: 600;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        .reddit-badge {
+            position: absolute;
+            top: 0;
+            right: 0;
+            background: linear-gradient(135deg, #ff4500, #ff6b35);
+            color: white;
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 6px 12px;
+            border-radius: 100px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .slide h2 {
+            font-size: clamp(1.5rem, 2.5vw, 2rem);
+            font-weight: 700;
+            line-height: 1.2;
+        }
+
+        .slide-question {
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            margin-top: 10px;
+            font-weight: 400;
+        }
+
+        .slide-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            overflow: hidden;
+        }
+
+        /* Divider Slide */
+        .slide.divider {
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            background: var(--bg-secondary);
+        }
+
+        .slide.divider::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 8px;
+            background: var(--accent);
+        }
+
+        .slide.divider h2 {
+            font-size: clamp(2.5rem, 4vw, 3.5rem);
+            margin-bottom: 16px;
+        }
+
+        .slide.divider .subtitle {
+            font-size: 1.5rem;
+            color: var(--text-secondary);
+            font-weight: 300;
+        }
+
+        /* Agenda */
+        .agenda-list {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            max-width: 650px;
+        }
+
+        .agenda-item {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 18px 28px;
+            background: var(--bg-secondary);
+            border-radius: 10px;
+            border-left: 4px solid var(--accent);
+            transition: all 0.3s ease;
+        }
+
+        .agenda-item:hover {
+            transform: translateX(8px);
+            box-shadow: 0 4px 20px rgba(36, 176, 201, 0.1);
+        }
+
+        .agenda-num {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--accent);
+            min-width: 36px;
+        }
+
+        .agenda-text {
+            font-size: 1.15rem;
+            font-weight: 500;
+        }
+
+        /* Split Screen */
+        .split-screen {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            height: 100%;
+            align-items: start;
+        }
+
+        .split-left, .split-right {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            position: relative;
+            z-index: 2;
+        }
+
+        .split-divider {
+            position: absolute;
+            left: var(--divider-x, 50%);
+            top: 130px;
+            bottom: 90px;
+            width: 2px;
+            background: linear-gradient(180deg, transparent 0%, var(--border) 8%, var(--border) 92%, transparent 100%);
+            z-index: 3;
+            pointer-events: none;
+        }
+
+        .meme-image {
+            width: 100%;
+            max-width: 210px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            object-fit: cover;
+        }
+
+        .section-title {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+
+        .section-title.traditional { color: var(--text-secondary); }
+        .section-title.modern { color: var(--accent); }
+
+        /* Flowchart */
+        .flowchart {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .flow-box {
+            background: var(--bg-primary);
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            padding: 14px 24px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            text-align: center;
+            min-width: 240px;
+            transition: all 0.3s ease;
+        }
+
+        .flow-box:hover { border-color: var(--accent); }
+
+        .flow-arrow {
+            color: var(--accent);
+            font-size: 1.25rem;
+            animation: bounce 2s infinite;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(4px); }
+        }
+
+        /* Code Blocks */
+        .code-block {
+            background: var(--code-bg);
+            border-radius: 12px;
+            border: 1px solid var(--code-border);
+            overflow: hidden;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .code-block pre {
+            padding: 20px 24px;
+            overflow-x: auto;
+            font-size: 0.85rem;
+            line-height: 1.6;
+            margin: 0;
+        }
+
+        .code-block code {
+            font-family: inherit;
+            color: #e4e4e7;
+        }
+
+        .code-keyword { color: #24b0c9; }
+        .code-string { color: #a5f3d0; }
+        .code-number { color: #fca5a5; }
+        .code-function { color: #c4b5fd; }
+        .code-comment { color: #71717a; font-style: italic; }
+        .code-operator { color: #f0abfc; }
+
+        /* Bullet Points */
+        .bullet-list {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            padding-left: 8px;
+        }
+
+        .bullet-item {
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+            font-size: 1.05rem;
+            line-height: 1.6;
+            color: var(--text-secondary);
+        }
+
+        .bullet-item::before {
+            content: '→';
+            color: var(--accent);
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        .bullet-item strong {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        /* Stats Grid Compact */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 24px;
+            max-width: 600px;
+        }
+
+        .stat-item {
+            background: var(--bg-secondary);
+            padding: 28px;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 3rem;
+            font-weight: 800;
+            color: var(--accent);
+            line-height: 1;
+            margin-bottom: 8px;
+        }
+
+        .stat-label {
+            font-size: 1rem;
+            color: var(--text-secondary);
+        }
+
+        /* Lighting Round */
+        .lighting-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+        }
+
+        .lighting-card {
+            background: var(--bg-secondary);
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            min-height: 140px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            opacity: 0;
+            transform: scale(0.9);
+        }
+
+        .lighting-card.revealed {
+            opacity: 1;
+            transform: scale(1);
+            background: var(--accent-light);
+            border-color: var(--accent);
+        }
+
+        .lighting-card .card-number {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            color: var(--accent);
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .lighting-card .card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .lighting-card .card-desc {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        .reveal-prompt {
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-top: 12px;
+            font-style: italic;
+        }
+
+        /* Navigation - Bottom Right */
+        .nav-controls {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 10px 16px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        }
+
+        .nav-btn {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            font-size: 1.1rem;
+            cursor: pointer;
+            padding: 8px 14px;
+            border-radius: 6px;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 40px;
+            height: 40px;
+        }
+
+        .nav-btn:hover {
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
+        }
+
+        .slide-counter {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            min-width: 50px;
+            text-align: center;
+            font-weight: 500;
+        }
+
+        .progress-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            height: 4px;
+            background: var(--accent);
+            transition: width 0.3s ease;
+            z-index: 1001;
+        }
+
+        .keyboard-hint {
+            position: fixed;
+            bottom: 80px;
+            right: 24px;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+
+        .presentation:hover .keyboard-hint {
+            opacity: 1;
+        }
+
+        /* Animations */
+        .fade-in {
+            opacity: 0;
+            transform: translateY(12px);
+            animation: fadeInUp 0.4s ease forwards;
+        }
+
+        @keyframes fadeInUp {
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .stagger-1 { animation-delay: 0.1s; }
+        .stagger-2 { animation-delay: 0.2s; }
+        .stagger-3 { animation-delay: 0.3s; }
+        .stagger-4 { animation-delay: 0.4s; }
+
+        /* Closing Slide */
+        .slide.closing {
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .split-screen { grid-template-columns: 1fr; gap: 30px; }
+            .split-divider { display: none; }
+            .lighting-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+
+        @media (max-width: 768px) {
+            .slide { padding: 40px 24px 80px 24px; }
+            .lighting-grid { grid-template-columns: 1fr; }
+            .nav-controls { right: 20px; bottom: 20px; }
+            .stats-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="presentation">
+        <div class="progress-bar" id="progressBar"></div>
+
+        <!-- SLIDE 1: Title -->
+        <section class="slide title-slide active" data-slide="1">
+            <div class="title-badge">STUG 2026</div>
+            <h1>Lesser Known, Yet Powerful<br>SQL Features in Snowflake</h1>
+            <p class="subtitle">Some awesome SQL commands and functions</p>
+            <div class="speaker-info">
+                <span class="speaker-name">Raj Thakkar</span>
+                <span class="speaker-role">Principal, Data &amp; AI | Deloitte Australia | Snowflake Data Superhero 2026</span>
+            </div>
+            <div class="event-badge">Sydney Technology User Group — February 2026</div>
+        </section>
+
+        <!-- SLIDE 2: Agenda -->
+        <section class="slide" data-slide="2">
+            <div class="slide-header">
+                <div class="slide-number">Agenda</div>
+                <h2>What We'll Cover Today</h2>
+            </div>
+            <div class="slide-content">
+                <div class="agenda-list">
+                    <div class="agenda-item fade-in">
+                        <span class="agenda-num">01</span>
+                        <span class="agenda-text">Why SQL Still Matters</span>
+                    </div>
+                    <div class="agenda-item fade-in stagger-1">
+                        <span class="agenda-num">02</span>
+                        <span class="agenda-text">Some Cool "Non-AI" SQLs</span>
+                    </div>
+                    <div class="agenda-item fade-in stagger-2">
+                        <span class="agenda-num">03</span>
+                        <span class="agenda-text">Some Cool "AI" SQLs</span>
+                    </div>
+                    <div class="agenda-item fade-in stagger-3">
+                        <span class="agenda-num">04</span>
+                        <span class="agenda-text">Lighting Round</span>
+                    </div>
+                    <div class="agenda-item fade-in stagger-4">
+                        <span class="agenda-num">05</span>
+                        <span class="agenda-text">Skilling up — Cortex Code</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 3 -->
+        <section class="slide divider" data-slide="3">
+            <h2>Why SQL Still Matters</h2>
+        </section>
+
+        <!-- SLIDE 4 -->
+        <section class="slide" data-slide="4">
+            <div class="slide-header">
+                <div class="slide-number">Why SQL Still Matters</div>
+                <h2>Snowflake SQL by Numbers</h2>
+            </div>
+            <div class="slide-content" style="justify-content: center; align-items: center;">
+                <div class="stats-grid" style="margin: 0 auto;">
+                    <div class="stat-item fade-in">
+                        <div class="stat-value">300+</div>
+                        <div class="stat-label">SQL Functions</div>
+                    </div>
+                    <div class="stat-item fade-in stagger-1">
+                        <div class="stat-value">100+</div>
+                        <div class="stat-label">SQL Commands</div>
+                    </div>
+                    <div class="stat-item fade-in stagger-2">
+                        <div class="stat-value">15+</div>
+                        <div class="stat-label">AI/Cortex Functions</div>
+                    </div>
+                    <div class="stat-item fade-in stagger-3">
+                        <div class="stat-value">50+</div>
+                        <div class="stat-label">Aggregate Functions</div>
+                    </div>
+                </div>
+                <p class="fade-in" style="margin-top: 32px; font-size: 0.9rem; color: var(--text-muted); text-align: center;">Source: docs.snowflake.com/sql-reference/functions-all</p>
+                <p class="fade-in stagger-4" style="margin-top: 24px; font-size: 1.25rem; font-weight: 600; color: var(--accent); text-align: center;">SQL is a first class citizen in Snowflake!</p>
+            </div>
+        </section>
+
+        <!-- SLIDE 5 -->
+        <section class="slide" data-slide="5">
+            <div class="slide-header">
+                <div class="slide-number">Why SQL Still Matters</div>
+                <h2>In the Age of Agents</h2>
+            </div>
+            <div class="slide-content">
+                <div style="display: grid; gap: 16px;">
+                    <div style="background: var(--bg-secondary); border-left: 4px solid var(--accent); border-radius: 10px; padding: 16px;">
+                        <p style="font-weight: 700;">AI Slop is a thing</p>
+                        <ul style="padding-left: 20px; margin-top: 8px; line-height: 1.6; color: var(--text-secondary);">
+                            <li>Human's still ahve a higher taste</li>
+                            <li>SQL Skills let you review, validate and refine what AI generates</li>
+                        </ul>
+                    </div>
+                    <div style="background: var(--bg-secondary); border-left: 4px solid var(--accent); border-radius: 10px; padding: 16px;">
+                        <p style="font-weight: 700;">SQL is a first-class citizen in Snowflake</p>
+                        <ul style="padding-left: 20px; margin-top: 8px; line-height: 1.6; color: var(--text-secondary);">
+                            <li>SQL remains core to Snowflake</li>
+                        </ul>
+                    </div>
+                    <div style="background: var(--bg-secondary); border-left: 4px solid var(--accent); border-radius: 10px; padding: 16px;">
+                        <p style="font-weight: 700;">The SQL you know keeps getting more powerful</p>
+                        <ul style="padding-left: 20px; margin-top: 8px; line-height: 1.6; color: var(--text-secondary);">
+                            <li>New Syntax, New Capabilities, Better way of doing things</li>
+                            <li>Every few months new production ready features drop. So stay up to date!</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 6 -->
+        <section class="slide divider" data-slide="6">
+            <h2>Some Cool "Non-AI" SQLs</h2>
+        </section>
+
+        <!-- SLIDE 7 -->
+        <section class="slide" data-slide="7">
+            <div class="slide-header">
+                <div class="slide-number">Non-AI SQL</div>
+                <div class="reddit-badge">⭐ Top voted on Reddit</div>
+                <h2>Top N per group without CTEs</h2>
+                <p class="slide-question">How do we get the top 3 performers in each department?</p>
+            </div>
+            <div class="slide-content">
+                <div class="split-screen">
+                    <div class="split-left">
+                        <div class="section-title traditional">With CTE</div>
+                        <div class="code-block fade-in">
+                            <pre><code><span class="code-keyword">WITH</span> ranked <span class="code-keyword">AS</span> (
+    <span class="code-keyword">SELECT</span> *,
+        <span class="code-function">ROW_NUMBER</span>() <span class="code-keyword">OVER</span> (
+            <span class="code-keyword">PARTITION BY</span> dept
+            <span class="code-keyword">ORDER BY</span> salary <span class="code-keyword">DESC</span>
+        ) <span class="code-keyword">AS</span> rn
+    <span class="code-keyword">FROM</span> employees
+)
+<span class="code-keyword">SELECT</span> * <span class="code-keyword">FROM</span> ranked
+<span class="code-keyword">WHERE</span> rn &lt;= <span class="code-number">3</span>;</code></pre>
+                        </div>
+                    </div>
+                    <div class="split-right">
+                        <div class="section-title modern">With QUALIFY</div>
+                        <div class="code-block fade-in stagger-1">
+                            <pre><code><span class="code-keyword">SELECT</span> * <span class="code-keyword">FROM</span> employees
+<span class="code-keyword">QUALIFY</span> <span class="code-function">ROW_NUMBER</span>() <span class="code-keyword">OVER</span> (
+    <span class="code-keyword">PARTITION BY</span> dept
+    <span class="code-keyword">ORDER BY</span> salary <span class="code-keyword">DESC</span>
+) &lt;= <span class="code-number">3</span>;</code></pre>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 170px; gap: 10px; margin-top: 10px;">
+                            <ul style="padding-left: 20px; color: var(--text-secondary); line-height: 1.5; font-size: 0.92rem;">
+                                <li>Intent is explicity</li>
+                                <li>No more nested subsequeries, redundant columns</li>
+                                <li>Half of the code!!</li>
+                            </ul>
+                            <img src="meme.jpeg" alt="Meme" style="width: 100%; border-radius: 10px; border: 1px solid var(--border); object-fit: cover;">
+                        </div>
+                    </div>
+                </div>
+                <div class="split-divider"></div>
+            </div>
+        </section>
+
+        <!-- SLIDE 8 -->
+        <section class="slide" data-slide="8">
+            <div class="slide-header">
+                <div class="slide-number">Non-AI SQL</div>
+                <div class="reddit-badge">⭐ Top voted on Reddit</div>
+                <h2>Stop repeating yourself</h2>
+                <p class="slide-question">Why do I have to list every non-aggregated column twice?</p>
+            </div>
+            <div class="slide-content">
+                <div class="split-screen">
+                    <div class="split-left">
+                        <div class="section-title traditional">Before</div>
+                        <div class="code-block fade-in">
+                            <pre><code><span class="code-keyword">SELECT</span>
+    department, role, location,
+    <span class="code-function">COUNT</span>(*) <span class="code-keyword">AS</span> headcount,
+    <span class="code-function">AVG</span>(salary) <span class="code-keyword">AS</span> avg_salary
+<span class="code-keyword">FROM</span> employees
+<span class="code-keyword">GROUP BY</span> department, role, location;</code></pre>
+                        </div>
+                    </div>
+                    <div class="split-right">
+                        <div class="section-title modern">With GROUP BY ALL</div>
+                        <div class="code-block fade-in stagger-1">
+                            <pre><code><span class="code-keyword">SELECT</span>
+    department, role, location,
+    <span class="code-function">COUNT</span>(*) <span class="code-keyword">AS</span> headcount,
+    <span class="code-function">AVG</span>(salary) <span class="code-keyword">AS</span> avg_salary
+<span class="code-keyword">FROM</span> employees
+<span class="code-keyword">GROUP BY ALL</span>;</code></pre>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 170px; gap: 10px; margin-top: 10px;">
+                            <ul style="padding-left: 20px; color: var(--text-secondary); line-height: 1.5; font-size: 0.92rem;">
+                                <li>Less Typing</li>
+                                <li>Fewer bugs</li>
+                                <li>No more 'not a group by expression' error!</li>
+                            </ul>
+                            <img src="meme.jpeg" alt="Meme" style="width: 100%; border-radius: 10px; border: 1px solid var(--border); object-fit: cover;">
+                        </div>
+                    </div>
+                </div>
+                <div class="split-divider"></div>
+            </div>
+        </section>
+
+        <!-- SLIDE 9 -->
+        <section class="slide" data-slide="9">
+            <div class="slide-header">
+                <div class="slide-number">Non-AI SQL</div>
+                <h2>Pipe Operator (`-&gt;&gt;`)</h2>
+                <p class="slide-question">How do we stay in flow while chaining SQL steps?</p>
+            </div>
+            <div class="slide-content">
+                <div class="split-screen">
+                    <div class="split-left">
+                        <div class="section-title traditional">Before 1</div>
+                        <div class="code-block fade-in">
+                            <pre style="font-size: 0.74rem; line-height: 1.45;"><code><span class="code-keyword">SHOW</span> WAREHOUSES;
+
+<span class="code-keyword">SELECT</span> <span class="code-string">"name"</span>, <span class="code-string">"state"</span>, <span class="code-string">"type"</span>, <span class="code-string">"size"</span>
+  <span class="code-keyword">FROM</span> <span class="code-function">TABLE</span>(<span class="code-function">RESULT_SCAN</span>(<span class="code-function">LAST_QUERY_ID</span>(-<span class="code-number">1</span>)));</code></pre>
+                        </div>
+                        <div class="section-title traditional" style="margin-top: 8px;">Before 2 (traditional approach)</div>
+                        <div class="code-block fade-in stagger-1">
+                            <pre style="font-size: 0.72rem; line-height: 1.35;"><code><span class="code-comment">-- Pseudo code (~35+ lines): many steps + query_id tracking</span>
+<span class="code-keyword">BEGIN</span> TRANSACTION;
+<span class="code-keyword">INSERT INTO</span> test_sql_pipe_dml <span class="code-keyword">VALUES</span> (1, 2);
+<span class="code-keyword">SET</span> q1 = <span class="code-function">LAST_QUERY_ID</span>();
+<span class="code-keyword">DELETE FROM</span> test_sql_pipe_dml <span class="code-keyword">WHERE</span> a = 1;
+<span class="code-keyword">SET</span> q2 = <span class="code-function">LAST_QUERY_ID</span>();
+<span class="code-keyword">UPDATE</span> test_sql_pipe_dml <span class="code-keyword">SET</span> b = 2;
+<span class="code-keyword">SET</span> q3 = <span class="code-function">LAST_QUERY_ID</span>();
+<span class="code-keyword">COMMIT</span>;
+<span class="code-keyword">SELECT</span>
+  ( <span class="code-keyword">SELECT</span> <span class="code-number">1</span> <span class="code-keyword">FROM</span> <span class="code-function">TABLE</span>(<span class="code-function">RESULT_SCAN</span>($q1)) ) <span class="code-keyword">AS</span> <span class="code-string">"Inserted rows"</span>,
+  ( <span class="code-keyword">SELECT</span> <span class="code-number">2</span> <span class="code-keyword">FROM</span> <span class="code-function">TABLE</span>(<span class="code-function">RESULT_SCAN</span>($q2)) ) <span class="code-keyword">AS</span> <span class="code-string">"Deleted rows"</span>,
+  ( <span class="code-keyword">SELECT</span> <span class="code-number">3</span> <span class="code-keyword">FROM</span> <span class="code-function">TABLE</span>(<span class="code-function">RESULT_SCAN</span>($q3)) ) <span class="code-keyword">AS</span> <span class="code-string">"Updated rows"</span>;</code></pre>
+                        </div>
+                    </div>
+                    <div class="split-right">
+                        <div class="section-title modern">After 1</div>
+                        <div class="code-block fade-in stagger-2">
+                            <pre style="font-size: 0.74rem; line-height: 1.45;"><code><span class="code-comment">-- This statement uses the pipe operator to produce the same results:</span>
+<span class="code-keyword">SHOW</span> WAREHOUSES
+  -&gt;&gt; <span class="code-keyword">SELECT</span> <span class="code-string">"name"</span>, <span class="code-string">"state"</span>, <span class="code-string">"type"</span>, <span class="code-string">"size"</span> <span class="code-keyword">FROM</span> $1;</code></pre>
+                        </div>
+                        <div class="section-title modern" style="margin-top: 8px;">After 2</div>
+                        <div class="code-block fade-in stagger-3">
+                            <pre style="font-size: 0.72rem; line-height: 1.35;"><code><span class="code-keyword">BEGIN</span> TRANSACTION
+  -&gt;&gt; <span class="code-keyword">INSERT INTO</span> test_sql_pipe_dml <span class="code-keyword">VALUES</span> (1, 2)
+  -&gt;&gt; <span class="code-keyword">DELETE FROM</span> test_sql_pipe_dml <span class="code-keyword">WHERE</span> a = 1
+  -&gt;&gt; <span class="code-keyword">UPDATE</span> test_sql_pipe_dml <span class="code-keyword">SET</span> b = 2
+  -&gt;&gt; <span class="code-keyword">COMMIT</span>
+  -&gt;&gt; <span class="code-keyword">SELECT</span>
+        (<span class="code-keyword">SELECT</span> $1 <span class="code-keyword">FROM</span> $4) <span class="code-keyword">AS</span> <span class="code-string">"Inserted rows"</span>,
+        (<span class="code-keyword">SELECT</span> $1 <span class="code-keyword">FROM</span> $3) <span class="code-keyword">AS</span> <span class="code-string">"Deleted rows"</span>,
+        (<span class="code-keyword">SELECT</span> $1 <span class="code-keyword">FROM</span> $2) <span class="code-keyword">AS</span> <span class="code-string">"Updated rows"</span>;
+
+<span class="code-comment">+---------------+--------------+--------------+</span>
+<span class="code-comment">| Inserted rows | Deleted rows | Updated rows |</span>
+<span class="code-comment">|---------------+--------------+--------------|</span>
+<span class="code-comment">|             1 |            2 |            3 |</span>
+<span class="code-comment">+---------------+--------------+--------------+</span></code></pre>
+                        </div>
+                        <p style="margin-top: 6px; color: var(--accent); font-weight: 600;">Stay in the flow!!</p>
+                        <div style="display: grid; grid-template-columns: 1fr 150px; gap: 10px; margin-top: 8px;">
+                            <div style="background: var(--bg-secondary); border-left: 4px solid var(--accent); border-radius: 10px; padding: 8px 10px;">
+                            <p style="font-weight: 700; margin-bottom: 6px;">What's so great about the great lakes</p>
+                            <ul style="padding-left: 18px; color: var(--text-secondary); line-height: 1.4; font-size: 0.82rem;">
+                                <li>Intent is explicit and linear</li>
+                                <li>Fewer temporary variables/query IDs</li>
+                                <li>Much easier debugging in sequence</li>
+                            </ul>
+                            </div>
+                            <img src="meme.jpeg" alt="What's so great about the great lakes meme" class="meme-image">
+                        </div>
+                    </div>
+                </div>
+                <div class="split-divider"></div>
+            </div>
+        </section>
+
+        <!-- SLIDE 10 -->
+        <section class="slide" data-slide="10">
+            <div class="slide-header">
+                <div class="slide-number">Non-AI SQL</div>
+                <h2>MAX_BY / MIN_BY</h2>
+                <p class="slide-question">Who is on a 996 work pattern (9am to 9pm, 6 days/week)?</p>
+            </div>
+            <div class="slide-content">
+                <div class="split-screen" style="grid-template-columns: 1.35fr 0.65fr; gap: 22px;">
+                    <div class="split-left">
+                        <div class="code-block fade-in">
+                            <pre style="font-size: 0.79rem; line-height: 1.45;"><code><span class="code-comment">-- 996 = 9am to 9pm, 6 days/week (72 hrs)</span>
+<span class="code-comment">-- Traditional pattern: aggregate first, then filter</span>
+<span class="code-keyword">WITH</span> weekly_hours <span class="code-keyword">AS</span> (
+  <span class="code-keyword">SELECT</span> employee_id, employee_name, department, week_start_date,
+         <span class="code-function">SUM</span>(hours_worked) <span class="code-keyword">AS</span> total_hours
+  <span class="code-keyword">FROM</span> employee_timesheets
+  <span class="code-keyword">GROUP BY</span> employee_id, employee_name, department, week_start_date
+)
+<span class="code-keyword">SELECT</span> employee_id, employee_name, department, week_start_date, total_hours
+<span class="code-keyword">FROM</span> weekly_hours
+<span class="code-keyword">WHERE</span> total_hours &gt;= <span class="code-number">72</span>;
+
+<span class="code-comment">-- MAX_BY: get the heaviest week per employee + filter 996 pattern</span>
+<span class="code-keyword">WITH</span> per_week <span class="code-keyword">AS</span> (
+  <span class="code-keyword">SELECT</span> employee_id, employee_name, department, week_start_date,
+         <span class="code-function">SUM</span>(hours_worked) <span class="code-keyword">AS</span> total_hours
+  <span class="code-keyword">FROM</span> employee_timesheets
+  <span class="code-keyword">GROUP BY ALL</span>
+)
+<span class="code-keyword">SELECT</span> employee_id,
+       <span class="code-function">MAX_BY</span>(<span class="code-function">OBJECT_CONSTRUCT</span>(
+         <span class="code-string">'employee_name'</span>, employee_name,
+         <span class="code-string">'department'</span>, department,
+         <span class="code-string">'week_start_date'</span>, week_start_date,
+         <span class="code-string">'hours'</span>, total_hours
+       ), total_hours) <span class="code-keyword">AS</span> peak_week
+<span class="code-keyword">FROM</span> per_week
+<span class="code-keyword">GROUP BY</span> employee_id
+<span class="code-keyword">HAVING</span> <span class="code-function">MAX</span>(total_hours) &gt;= <span class="code-number">72</span>;</code></pre>
+                        </div>
+                    </div>
+                    <div class="split-right">
+                        <div style="background: var(--bg-secondary); border-left: 4px solid var(--accent); border-radius: 10px; padding: 12px;">
+                            <p style="font-weight: 700; margin-bottom: 6px;">What's so great about the great lakes</p>
+                            <ul style="padding-left: 18px; color: var(--text-secondary); line-height: 1.45; font-size: 0.88rem;">
+                                <li>Intent is clear in one query</li>
+                                <li>No extra ranking CTE stack</li>
+                                <li>Compact and easier to maintain</li>
+                            </ul>
+                        </div>
+                        <p style="font-size: 0.86rem; color: var(--text-secondary); margin-top: 2px; line-height: 1.45;">
+                            996 means 72+ hours in a week. This pattern flags likely sustained overtime risk.
+                        </p>
+                        <img src="meme.jpeg" alt="What's so great about the great lakes meme" class="meme-image">
+                    </div>
+                </div>
+                <div class="split-divider"></div>
+            </div>
+        </section>
+
+        <!-- SLIDE 11 -->
+        <section class="slide" data-slide="11">
+            <div class="slide-header">
+                <div class="slide-number">Non-AI SQL</div>
+                <h2>MAX_BY for AI usage by department</h2>
+                <p class="slide-question">Find employee with max token usage by department.</p>
+            </div>
+            <div class="slide-content">
+                <div class="split-screen">
+                    <div class="split-left">
+                        <div class="section-title traditional">Before (traditional CTE)</div>
+                        <div class="code-block fade-in">
+                            <pre><code><span class="code-keyword">WITH</span> usage_rollup <span class="code-keyword">AS</span> (
+    <span class="code-keyword">SELECT</span> department, employee_id, employee_name,
+           <span class="code-function">SUM</span>(tokens_used) <span class="code-keyword">AS</span> total_tokens
+    <span class="code-keyword">FROM</span> employee_ai_usage
+    <span class="code-keyword">GROUP BY</span> department, employee_id, employee_name
+),
+ranked <span class="code-keyword">AS</span> (
+    <span class="code-keyword">SELECT</span> *,
+           <span class="code-function">ROW_NUMBER</span>() <span class="code-keyword">OVER</span>(
+             <span class="code-keyword">PARTITION BY</span> department
+             <span class="code-keyword">ORDER BY</span> total_tokens <span class="code-keyword">DESC</span>
+           ) <span class="code-keyword">AS</span> rn
+    <span class="code-keyword">FROM</span> usage_rollup
+)
+<span class="code-keyword">SELECT</span> department, employee_id, employee_name, total_tokens
+<span class="code-keyword">FROM</span> ranked
+<span class="code-keyword">WHERE</span> rn = 1;</code></pre>
+                        </div>
+                    </div>
+                    <div class="split-right">
+                        <div class="section-title modern">After (intent clear + compact)</div>
+                        <div class="code-block fade-in stagger-1">
+                            <pre><code><span class="code-keyword">SELECT</span> department, <span class="code-function">MAX_BY</span>( <span class="code-function">object_construct</span>(
+            <span class="code-string">'employee_id'</span>, employee_id
+          , <span class="code-string">'employee_name'</span>, employee_name
+          , <span class="code-string">'total_tokens'</span>, <span class="code-function">SUM</span>(tokens_used)
+        ),
+        <span class="code-function">SUM</span>(tokens_used)) <span class="code-keyword">AS</span> top_employee
+<span class="code-keyword">FROM</span> employee_ai_usage
+<span class="code-keyword">GROUP BY ALL</span>;
+
+<span class="code-comment">-- Example output:</span>
+<span class="code-comment">-- Engineering | {"employee_id":"E101","employee_name":"Alice Chen","total_tokens":184920}</span>
+<span class="code-comment">-- Marketing   | {"employee_id":"E214","employee_name":"Ben Wong","total_tokens":132400}</span>
+<span class="code-comment">-- Finance     | {"employee_id":"E089","employee_name":"Nina Patel","total_tokens":118230}</span></code></pre>
+                        </div>
+                    </div>
+                </div>
+                <div class="split-divider" style="display:block;"></div>
+            </div>
+        </section>
+
+        <!-- SLIDE 12 -->
+        <section class="slide" data-slide="12">
+            <div class="slide-header">
+                <div class="slide-number">Non-AI SQL</div>
+                <h2>CONCAT_WS handles nulls gracefully</h2>
+                <p class="slide-question">Build full names with optional middle names.</p>
+            </div>
+            <div class="slide-content">
+                <div class="split-screen">
+                    <div class="split-left">
+                        <div class="section-title traditional">Before</div>
+                        <div class="code-block fade-in">
+                            <pre><code><span class="code-keyword">SELECT</span>
+  <span class="code-function">TRIM</span>(
+    first_name || <span class="code-string">' '</span> ||
+    <span class="code-function">COALESCE</span>(middle_name || <span class="code-string">' '</span>, <span class="code-string">''</span>) ||
+    last_name
+  ) <span class="code-keyword">AS</span> full_name
+<span class="code-keyword">FROM</span> employees;</code></pre>
+                        </div>
+                    </div>
+                    <div class="split-right">
+                        <div class="section-title modern">After</div>
+                        <div class="code-block fade-in stagger-1">
+                            <pre><code><span class="code-keyword">SELECT</span>
+  <span class="code-function">CONCAT_WS</span>(<span class="code-string">' '</span>, first_name, middle_name, last_name) <span class="code-keyword">AS</span> full_name
+<span class="code-keyword">FROM</span> employees;
+
+<span class="code-comment">-- Example output:</span>
+<span class="code-comment">-- first_name | middle_name | last_name | full_name</span>
+<span class="code-comment">-- Raj        | NULL        | Thakkar   | Raj Thakkar</span>
+<span class="code-comment">-- Ada        | Grace       | Hopper    | Ada Grace Hopper</span></code></pre>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 150px; gap: 10px; margin-top: 10px;">
+                            <div style="background: var(--bg-secondary); border-left: 4px solid var(--accent); border-radius: 10px; padding: 10px 12px;">
+                                <p style="font-weight: 700; margin-bottom: 6px;">What's so great about the great lakes</p>
+                                <ul style="padding-left: 18px; color: var(--text-secondary); line-height: 1.45; font-size: 0.88rem;">
+                                    <li>Handles NULLs gracefully</li>
+                                    <li>Cleaner and more readable than nested COALESCE chains</li>
+                                    <li>Fewer string concatenation bugs</li>
+                                </ul>
+                            </div>
+                            <img src="meme.jpeg" alt="What's so great about the great lakes meme" class="meme-image">
+                        </div>
+                    </div>
+                </div>
+                <div class="split-divider"></div>
+            </div>
+        </section>
+
+        <!-- SLIDE 13 -->
+        <section class="slide divider" data-slide="13">
+            <h2>Some Cool "AI" SQLs</h2>
+        </section>
+
+        <!-- SLIDE 14 -->
+        <section class="slide" data-slide="14">
+            <div class="slide-header">
+                <div class="slide-number">AI SQL</div>
+                <h2>AI_EXTRACT (AKA Inbuilt OCR)</h2>
+                <p class="slide-question">How do we process 50,000 invoice PDFs monthly?</p>
+            </div>
+            <div class="slide-content">
+                <div class="split-screen">
+                    <div class="split-left">
+                        <div class="section-title traditional">Before</div>
+                        <div class="flowchart">
+                            <div class="flow-box fade-in">Build OCR pipeline + Python service</div>
+                            <div class="flow-arrow">↓</div>
+                            <div class="flow-box fade-in stagger-1">Map fields manually</div>
+                            <div class="flow-arrow">↓</div>
+                            <div class="flow-box fade-in stagger-2">Add retries + reprocessing queues</div>
+                            <div class="flow-arrow">↓</div>
+                            <div class="flow-box fade-in stagger-3">Maintain multiple moving parts</div>
+                        </div>
+                    </div>
+                    <div class="split-right">
+                        <div class="section-title modern">After</div>
+                        <div class="code-block fade-in stagger-1">
+                            <pre><code><span class="code-keyword">SELECT</span> <span class="code-function">AI_EXTRACT</span>(
+    file =&gt; <span class="code-function">TO_FILE</span>(<span class="code-string">'@DEMO_AUS_DB.BRONZE.call_recordings_stage'</span>, <span class="code-string">'stug-2026-v5.pdf'</span>),
+    responseFormat =&gt; {<span class="code-string">'title'</span>: <span class="code-string">'What is the title of the presentation?'</span>,
+                       <span class="code-string">'pages'</span>: <span class="code-string">'how many pages in the presentation?'</span>,
+                       <span class="code-string">'presenter'</span>: <span class="code-string">'what is the name of the presenter?'</span>}
+) <span class="code-keyword">AS</span> extracted;
+
+<span class="code-comment">-- Example output:</span>
+<span class="code-comment">-- { "title":"Lesser Known, Yet Powerful SQL Features in Snowflake", "pages": 21, "presenter":"Raj Thakkar" }</span></code></pre>
+                        </div>
+                        <p style="font-size: 0.9rem; color: var(--text-secondary); margin-top: 10px;">AI_EXTRACT uses Arctic-Extract (Snowflake proprietary vision model). Timely: Document AI predict is being sundowned end of this month.</p>
+                        <div style="display: grid; grid-template-columns: 1fr 150px; gap: 10px; margin-top: 10px;">
+                            <div style="background: var(--bg-secondary); border-left: 4px solid var(--accent); border-radius: 10px; padding: 10px 12px;">
+                                <p style="font-weight: 700; margin-bottom: 6px;">What's so great about the great lakes</p>
+                                <ul style="padding-left: 18px; color: var(--text-secondary); line-height: 1.45; font-size: 0.86rem;">
+                                    <li>OCR + extraction in one SQL call</li>
+                                    <li>No custom document pipeline to maintain</li>
+                                    <li>Fast to operationalise at scale</li>
+                                </ul>
+                            </div>
+                            <img src="meme.jpeg" alt="What's so great about the great lakes meme" class="meme-image">
+                        </div>
+                    </div>
+                </div>
+                <div class="split-divider" style="display:block; background: linear-gradient(180deg, transparent 0%, #d1d5db 10%, #d1d5db 90%, transparent 100%);"></div>
+            </div>
+        </section>
+
+        <!-- SLIDE 15 -->
+        <section class="slide" data-slide="15">
+            <div class="slide-header">
+                <div class="slide-number">AI SQL</div>
+                <h2>AI_REDACT (AKA Inbuilt heavy black marker)</h2>
+                <p class="slide-question">How do we safely share logs with external vendors?</p>
+            </div>
+            <div class="slide-content">
+                <div class="split-screen">
+                    <div class="split-left">
+                        <div class="section-title traditional">Before</div>
+                        <div class="flowchart">
+                            <div class="flow-box fade-in">Regex patterns for each PII type</div>
+                            <div class="flow-arrow">↓</div>
+                            <div class="flow-box fade-in stagger-1">Custom masking rules per source</div>
+                            <div class="flow-arrow">↓</div>
+                            <div class="flow-box fade-in stagger-2">High maintenance + misses edge cases</div>
+                        </div>
+                    </div>
+                    <div class="split-right">
+                        <div class="section-title modern">After</div>
+                        <div class="code-block fade-in">
+                            <pre><code><span class="code-keyword">SELECT</span> <span class="code-function">AI_REDACT</span>(
+    <span class="code-string">'Contact John Smith at john@email.com or 0412 345 678'</span>,
+    [<span class="code-string">'NAME'</span>, <span class="code-string">'EMAIL'</span>, <span class="code-string">'PHONE_NUMBER'</span>]
+) <span class="code-keyword">AS</span> sanitized;
+
+<span class="code-comment">-- Example output:</span>
+<span class="code-comment">-- Contact [NAME] at [EMAIL] or [PHONE_NUMBER]</span></code></pre>
+                        </div>
+                        <p style="font-size: 0.88rem; color: var(--text-secondary); margin-top: 10px; line-height: 1.5;">
+                            Valid categories: NAME, EMAIL, PHONE_NUMBER, DATE_OF_BIRTH, GENDER, AGE, ADDRESS, NATIONAL_ID, PASSPORT, TAX_IDENTIFIER, PAYMENT_CARD_DATA, DRIVERS_LICENSE, IP_ADDRESS.
+                            <br>AI_REDACT uses a Snowflake managed LLM model [proprietary/undisclosed].
+                        </p>
+                        <div style="display: grid; grid-template-columns: 1fr 150px; gap: 10px; margin-top: 10px;">
+                            <div style="background: var(--bg-secondary); border-left: 4px solid var(--accent); border-radius: 10px; padding: 10px 12px;">
+                                <p style="font-weight: 700; margin-bottom: 6px;">What's so great about the great lakes</p>
+                                <ul style="padding-left: 18px; color: var(--text-secondary); line-height: 1.45; font-size: 0.88rem;">
+                                    <li>PII protection directly in SQL workflows</li>
+                                    <li>No external masking service required</li>
+                                    <li>Easy to operationalise in shared datasets and logs</li>
+                                </ul>
+                            </div>
+                            <img src="meme.jpeg" alt="What's so great about the great lakes meme" class="meme-image">
+                        </div>
+                    </div>
+                </div>
+                <div class="split-divider"></div>
+            </div>
+        </section>
+
+        <!-- SLIDE 16 -->
+        <section class="slide" data-slide="16">
+            <div class="slide-header">
+                <div class="slide-number">AI SQL</div>
+                <h2>AI_COMPLETE (AKA Inbuilt ChatGPT)</h2>
+                <p class="slide-question">How do we analyse a graph from a stage directly in SQL?</p>
+            </div>
+            <div class="slide-content">
+                <div class="split-screen">
+                    <div class="split-left">
+                        <div class="section-title traditional">Before</div>
+                        <div class="flowchart">
+                            <div class="flow-box fade-in">Export image to separate app</div>
+                            <div class="flow-arrow">↓</div>
+                            <div class="flow-box fade-in stagger-1">Prompt manually outside Snowflake</div>
+                            <div class="flow-arrow">↓</div>
+                            <div class="flow-box fade-in stagger-2">Copy back insights to warehouse</div>
+                        </div>
+                        <div style="margin-top: 12px; background: var(--bg-secondary); border-left: 4px solid var(--accent); border-radius: 10px; padding: 10px 12px;">
+                            <p style="font-weight: 700; margin-bottom: 6px;">What's so great about the great lakes</p>
+                            <ul style="padding-left: 18px; color: var(--text-secondary); line-height: 1.4; font-size: 0.82rem;">
+                                <li>Awesome way to integrate AI in your data pipelines</li>
+                                <li>Multimodal</li>
+                                <li>Data stays within Snowflake purview</li>
+                                <li>New models added regularly</li>
+                                <li>Token based pricing</li>
+                            </ul>
+                            <p style="margin-top: 6px; font-size: 0.78rem; color: var(--text-secondary); line-height: 1.35;">21+ models supported from [anthropic, OpenAI, Openweights].</p>
+                        </div>
+                        <img src="meme.jpeg" alt="What's so great about the great lakes meme" class="meme-image">
+                    </div>
+                    <div class="split-right">
+                        <div class="section-title modern">After</div>
+                        <div class="code-block fade-in stagger-1">
+                            <pre style="font-size: 0.73rem;"><code><span class="code-keyword">SELECT</span> <span class="code-function">AI_COMPLETE</span>(
+    <span class="code-string">'claude-sonnet-4-6'</span>,
+    <span class="code-function">PROMPT</span>(
+        <span class="code-string">'Analyze this sales graph. Describe the trends, key insights, and any notable patterns.'</span>,
+        <span class="code-function">TO_FILE</span>(<span class="code-string">'@DEMO_AUS_DB.BRONZE.YOUR_STAGE'</span>, <span class="code-string">'sales_graph.png'</span>)
+    )
+) <span class="code-keyword">AS</span> analysis;
+<span class="code-comment">-- Sample output: "Sales trend is steadily growing with a strong Q4 peak..."</span>
+
+<span class="code-keyword">SELECT</span> <span class="code-function">AI_COMPLETE</span>(
+    <span class="code-string">'claude-sonnet-4-6'</span>,
+    <span class="code-function">PROMPT</span>(
+        <span class="code-string">'Look at this sales graph and answer:
+         1. What is the overall trend (growing, declining, flat)?
+         2. Which period had the highest sales?
+         3. Are there any seasonal patterns?
+         4. What recommendations would you make based on this data?'</span>,
+        <span class="code-function">TO_FILE</span>(<span class="code-string">'@DEMO_AUS_DB.BRONZE.YOUR_STAGE'</span>, <span class="code-string">'sales_graph.png'</span>)
+    )
+) <span class="code-keyword">AS</span> detailed_analysis;
+<span class="code-comment">-- Sample output: "1) Growing 2) Q4 3) Seasonal spikes around holidays 4) Improve inventory planning"</span>
+
+<span class="code-keyword">SELECT</span> <span class="code-function">AI_COMPLETE</span>(
+    <span class="code-string">'claude-sonnet-4-6'</span>,
+    <span class="code-function">PROMPT</span>(
+        <span class="code-string">'Analyze this sales chart and return a JSON with: trend, peak_period, low_period, growth_rate_estimate, key_observations'</span>,
+        <span class="code-function">TO_FILE</span>(<span class="code-string">'@DEMO_AUS_DB.BRONZE.YOUR_STAGE'</span>, <span class="code-string">'sales_graph.png'</span>)
+    ),
+    {<span class="code-string">'response_format'</span>: {<span class="code-string">'type'</span>: <span class="code-string">'json'</span>}}
+) <span class="code-keyword">AS</span> structured_analysis;
+<span class="code-comment">-- Sample output: {"trend":"growing","peak_period":"Q4","low_period":"Q1","growth_rate_estimate":"~11%","key_observations":["seasonality","strong close"]}</span></code></pre>
+                        </div>
+                    </div>
+                </div>
+                <div class="split-divider" style="display:block; background: linear-gradient(180deg, transparent 0%, #d1d5db 10%, #d1d5db 90%, transparent 100%);"></div>
+            </div>
+        </section>
+
+        <!-- SLIDE 17 -->
+        <section class="slide" data-slide="17">
+            <div class="slide-header">
+                <div class="slide-number">AI SQL</div>
+                <h2>AI_TRANSCRIBE (AKA Inbuild Speech to Text engine)</h2>
+                <p class="slide-question">How is satisfaction with our customer support trending?</p>
+            </div>
+            <div class="slide-content">
+                <div class="split-screen">
+                    <div class="split-left">
+                        <div class="section-title traditional">Before</div>
+                        <div class="flowchart">
+                            <div class="flow-box fade-in">Export call recordings</div>
+                            <div class="flow-arrow">↓</div>
+                            <div class="flow-box fade-in stagger-1">Upload to external transcription service</div>
+                            <div class="flow-arrow">↓</div>
+                            <div class="flow-box fade-in stagger-2">Download transcript and reload to Snowflake</div>
+                        </div>
+                    </div>
+                    <div class="split-right">
+                        <div class="section-title modern">After</div>
+                        <div class="code-block fade-in stagger-1">
+                            <pre><code><span class="code-keyword">SELECT</span>
+    month,
+    <span class="code-function">AI_TRANSCRIBE</span>(<span class="code-function">TO_FILE</span>(audio_file)) <span class="code-keyword">AS</span> transcript
+<span class="code-keyword">FROM</span> DEMO_AUS_DB.BRONZE.call_recordings
+<span class="code-keyword">WHERE</span> customer_id = <span class="code-string">'CUST001'</span>;
+
+<span class="code-comment">-- Example output:</span>
+<span class="code-comment">-- 2026-01 | "Hi, I'm calling about my delayed shipment..."</span></code></pre>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 150px; gap: 10px; margin-top: 8px;">
+                            <ul style="padding-left: 18px; color: var(--text-secondary); line-height: 1.5;">
+                                <li>50,000 calls/month analyzed</li>
+                                <li>No data leaves Snowflake</li>
+                                <li>AI_TRANSCRIBE uses Whisper large-v3 (open-source from OpenAI, may change in future)</li>
+                            </ul>
+                            <img src="meme.jpeg" alt="What's so great about the great lakes meme" class="meme-image">
+                        </div>
+                    </div>
+                </div>
+                <div class="split-divider"></div>
+            </div>
+        </section>
+
+        <!-- SLIDE 18 -->
+        <section class="slide divider" data-slide="18">
+            <h2>Lighting Round</h2>
+        </section>
+
+        <!-- SLIDE 19 -->
+        <section class="slide" data-slide="19" id="lightingRound">
+            <div class="slide-header">
+                <div class="slide-number">Lighting Round</div>
+                <h2>More SQL Features</h2>
+            </div>
+            <div class="slide-content">
+                <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px;">
+                    <p style="font-weight: 700; margin-bottom: 6px;">Classic SQL "Dad Jokes" Generator</p>
+                    <p style="font-family: 'JetBrains Mono', monospace; font-size: 0.84rem; margin-bottom: 6px;">SELECT AI_COMPLETE('llama3-70b', 'Generate a classic SQL Dad Joke.');</p>
+                    <p style="font-size: 0.92rem; color: var(--text-secondary);">The Bar Visit: A SQL query walks into a bar, walks up to two tables, and asks, "Can I JOIN you?"</p>
+                </div>
+                <div class="lighting-grid">
+                    <div class="lighting-card" data-index="0">
+                        <div class="card-number">01</div>
+                        <div class="card-title">CREATE OR ALTER</div>
+                        <div class="card-desc">Idempotent DDL. Update or create in one command.
+                            <br><code>CREATE OR ALTER TABLE employee_dim (id NUMBER, name STRING);</code></div>
+                    </div>
+                    <div class="lighting-card" data-index="1">
+                        <div class="card-number">02</div>
+                        <div class="card-title">EXCLUDE</div>
+                        <div class="card-desc">Remove noisy columns quickly.
+                            <br><code>SELECT * EXCLUDE (raw_payload, pii_email) FROM employee_360;</code></div>
+                    </div>
+                    <div class="lighting-card" data-index="2">
+                        <div class="card-number">03</div>
+                        <div class="card-title">DIV0</div>
+                        <div class="card-desc">Safe division with zero handling.
+                            <br><code>SELECT DIV0(total_cost, total_revenue) AS ratio FROM kpi_daily;</code></div>
+                    </div>
+                    <div class="lighting-card" data-index="3">
+                        <div class="card-number">04</div>
+                        <div class="card-title">SEQ1 / SEQ2 / SEQ4 / SEQ8 with GENERATOR</div>
+                        <div class="card-desc">Generate millions of rows quickly for performance/load testing.
+                            <br><code>CREATE TABLE load_test AS
+SELECT
+    SEQ8() AS id,
+    UUID_STRING() AS guid,
+    RANDOM() AS random_val
+FROM TABLE(GENERATOR(ROWCOUNT =&gt; 10000000));</code></div>
+                    </div>
+                    <div class="lighting-card" data-index="4">
+                        <div class="card-number">05</div>
+                        <div class="card-title">SOUNDEX / JAROWINKLER_SIMILARITY</div>
+                        <div class="card-desc">Fuzzy matching for dirty names and duplicate detection workflows.
+                            <br><code>SELECT name, JAROWINKLER_SIMILARITY(name, 'Jon Smyth') AS score FROM contacts;</code></div>
+                    </div>
+                    <div class="lighting-card" data-index="5">
+                        <div class="card-number">06</div>
+                        <div class="card-title">AI_SUMMARIZE_AGG</div>
+                        <div class="card-desc">The "TL;DR" for 2.4 Billion Rows.
+                            <br><code>SELECT AI_SUMMARIZE_AGG(review_text) FROM customer_reviews;</code></div>
+                    </div>
+                </div>
+                <p class="reveal-prompt fade-in">Press spacebar to reveal each feature</p>
+            </div>
+        </section>
+
+        <!-- SLIDE 20 -->
+        <section class="slide" data-slide="20">
+            <div class="slide-header">
+                <div class="slide-number">Skilling Up</div>
+                <h2>Cortex Code CLI Skill: use-the-latest-greatest-sql</h2>
+            </div>
+            <div class="slide-content">
+                <div style="display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 18px; height: 100%;">
+                    <div>
+                        <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px;">
+                            <p style="font-size: 0.94rem; font-weight: 700; margin-bottom: 6px;">What does the skill do?</p>
+                            <ul style="padding-left: 18px; color: var(--text-secondary); line-height: 1.5; font-size: 0.89rem;">
+                                <li>Forces modern Snowflake SQL patterns in generated code</li>
+                                <li>Uses Snowflake docs only as source of truth</li>
+                            </ul>
+                        </div>
+                        <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px;">
+                            <p style="font-size: 0.94rem; font-weight: 700; margin-bottom: 6px;">What is the benefit?</p>
+                            <ul style="padding-left: 18px; color: var(--text-secondary); line-height: 1.5; font-size: 0.89rem;">
+                                <li>Shorter, cleaner SQL with less maintenance overhead</li>
+                                <li>Keeps runtime/cost impact in check when suggesting new syntax</li>
+                            </ul>
+                        </div>
+                        <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px;">
+                            <p style="font-size: 0.94rem; font-weight: 700; margin-bottom: 6px;">How do I use this skill? [Sample prompt]</p>
+                            <p style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--text-secondary); line-height: 1.45;">"Refactor this SQL to use latest Snowflake syntax only if cost/perf is same or better. Explain each change in one line."</p>
+                        </div>
+                    </div>
+                    <div class="code-block fade-in">
+<pre><code><span class="code-comment">Cortex Code CLI folder structure</span>
+.
+`-- .snowflake
+    `-- cortex
+        `-- skills
+            `-- &lt;your-skill-name&gt;
+                |-- SKILL.md
+                |-- references
+                |   `-- snowflake-doc-links.md
+                `-- templates
+                    `-- sql-review-checklist.md</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 21 -->
+        <section class="slide closing" data-slide="21">
+            <div class="title-badge">STUG 2026</div>
+            <h2>Stay Hungry, Stay Foolish, Stay Curious</h2>
+            <p style="margin-top: 4px; color: var(--text-muted); font-size: 0.95rem;">— Steve Jobs</p>
+            <div style="display: flex; align-items: center; justify-content: center; gap: 24px; flex-wrap: wrap; margin-bottom: 20px;">
+                <div style="text-align: left; max-width: 420px;">
+                    <p style="font-weight: 600; margin-bottom: 10px;">Code from today's presentation is available in this GitHub repo</p>
+                    <p style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;"><a href="https://github.com/directional-star/STUG-FEB-2026" target="_blank" rel="noopener">https://github.com/directional-star/STUG-FEB-2026</a></p>
+                </div>
+                <img src="stug-github-qr.png?v=9" alt="GitHub repo QR code" style="width: 210px; height: 210px; border: 1px solid var(--border); border-radius: 8px; background: #fff; object-fit: contain; display: block;">
+            </div>
+            <p style="font-weight: 600; margin-bottom: 10px;">Some tips</p>
+            <p style="color: var(--text-secondary); margin-bottom: 14px;">Try one new function per week</p>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; max-width: 760px; margin: 0 auto;">
+                <a href="https://docs.snowflake.com" target="_blank" rel="noopener" style="text-decoration: none; color: inherit; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 10px; padding: 14px;">📚 docs.snowflake.com</a>
+                <a href="https://community.snowflake.com" target="_blank" rel="noopener" style="text-decoration: none; color: inherit; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 10px; padding: 14px;">💬 community.snowflake.com</a>
+                <a href="https://learn.snowflake.com" target="_blank" rel="noopener" style="text-decoration: none; color: inherit; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 10px; padding: 14px;">🎓 learn.snowflake.com</a>
+            </div>
+            <p style="margin-top: 24px; color: var(--text-muted); font-size: 0.95rem;">Raj Thakkar · Principal, Data &amp; AI · Deloitte Australia</p>
+        </section>
+
+    </div>
+
+    <!-- Navigation - Bottom Right -->
+    <div class="nav-controls">
+        <button class="nav-btn" id="prevBtn" aria-label="Previous slide">←</button>
+        <span class="slide-counter"><span id="currentSlide">1</span> / <span id="totalSlides">21</span></span>
+        <button class="nav-btn" id="nextBtn" aria-label="Next slide">→</button>
+    </div>
+    
+    <div class="keyboard-hint">Use arrow keys or scroll to navigate</div>
+    
+    <script>
+        class SlidePresentation {
+            constructor() {
+                this.slides = document.querySelectorAll('.slide');
+                this.currentSlide = 0;
+                this.totalSlides = this.slides.length;
+                this.isTransitioning = false;
+                this.lightingIndex = 0;
+                this.lightingCards = document.querySelectorAll('.lighting-card');
+                this.lightingSlide = document.getElementById('lightingRound');
+                this.lightingSlideIndex = this.lightingSlide
+                    ? Array.from(this.slides).indexOf(this.lightingSlide)
+                    : -1;
+                
+                this.currentSlideEl = document.getElementById('currentSlide');
+                this.totalSlidesEl = document.getElementById('totalSlides');
+                this.progressBar = document.getElementById('progressBar');
+                
+                this.init();
+            }
+            
+            init() {
+                this.totalSlidesEl.textContent = this.totalSlides;
+                this.showSlide(0);
+                this.updateDividerPositions();
+                
+                document.getElementById('prevBtn').addEventListener('click', () => this.prev());
+                document.getElementById('nextBtn').addEventListener('click', () => this.next());
+                
+                document.addEventListener('keydown', (e) => this.handleKeydown(e));
+                document.addEventListener('wheel', (e) => this.handleWheel(e), { passive: false });
+                window.addEventListener('resize', () => this.updateDividerPositions());
+                
+                let touchStartY = 0;
+                document.addEventListener('touchstart', (e) => {
+                    touchStartY = e.touches[0].clientY;
+                }, { passive: true });
+                
+                document.addEventListener('touchend', (e) => {
+                    const touchEndY = e.changedTouches[0].clientY;
+                    const diff = touchStartY - touchEndY;
+                    if (Math.abs(diff) > 50) {
+                        if (diff > 0) this.next();
+                        else this.prev();
+                    }
+                }, { passive: true });
+            }
+
+            updateDividerPositions() {
+                this.slides.forEach((slide) => {
+                    const divider = slide.querySelector('.split-divider');
+                    const leftPane = slide.querySelector('.split-left');
+                    const rightPane = slide.querySelector('.split-right');
+                    if (!divider || !leftPane || !rightPane) return;
+
+                    const slideRect = slide.getBoundingClientRect();
+                    const leftRect = leftPane.getBoundingClientRect();
+                    const rightRect = rightPane.getBoundingClientRect();
+
+                    const midpoint = (leftRect.right + rightRect.left) / 2;
+                    const x = midpoint - slideRect.left;
+                    divider.style.setProperty('--divider-x', `${x}px`);
+                });
+            }
+            
+            showSlide(index) {
+                if (index < 0 || index >= this.totalSlides) return;
+                
+                this.slides.forEach((slide) => slide.classList.remove('active'));
+                this.slides[index].classList.add('active');
+                this.currentSlide = index;
+                
+                // Reset lighting round when leaving the slide
+                if (index !== this.lightingSlideIndex) {
+                    this.lightingIndex = 0;
+                    this.lightingCards.forEach(card => {
+                        card.classList.remove('revealed');
+                    });
+                }
+                
+                this.currentSlideEl.textContent = index + 1;
+                this.progressBar.style.width = `${((index + 1) / this.totalSlides) * 100}%`;
+                
+                document.getElementById('prevBtn').style.opacity = index === 0 ? '0.3' : '1';
+                document.getElementById('nextBtn').style.opacity = index === this.totalSlides - 1 ? '0.3' : '1';
+
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => this.updateDividerPositions());
+                });
+            }
+            
+            revealLightingCard() {
+                if (this.lightingIndex < this.lightingCards.length) {
+                    this.lightingCards[this.lightingIndex].classList.add('revealed');
+                    this.lightingIndex++;
+                    return true;
+                }
+                return false;
+            }
+            
+            next() {
+                // If on lighting round slide and cards remain, reveal next card
+                if (this.currentSlide === this.lightingSlideIndex && this.lightingIndex < this.lightingCards.length) {
+                    if (this.revealLightingCard()) return;
+                }
+                
+                if (this.currentSlide < this.totalSlides - 1) {
+                    this.showSlide(this.currentSlide + 1);
+                }
+            }
+            
+            prev() {
+                if (this.currentSlide > 0) {
+                    this.showSlide(this.currentSlide - 1);
+                }
+            }
+            
+            handleKeydown(e) {
+                switch(e.key) {
+                    case 'ArrowRight':
+                    case 'ArrowDown':
+                    case 'PageDown':
+                        e.preventDefault();
+                        this.next();
+                        break;
+                    case ' ':
+                        e.preventDefault();
+                        this.next();
+                        break;
+                    case 'ArrowLeft':
+                    case 'ArrowUp':
+                    case 'PageUp':
+                        e.preventDefault();
+                        this.prev();
+                        break;
+                    case 'Home':
+                        e.preventDefault();
+                        this.showSlide(0);
+                        break;
+                    case 'End':
+                        e.preventDefault();
+                        this.showSlide(this.totalSlides - 1);
+                        break;
+                }
+            }
+            
+            handleWheel(e) {
+                if (Math.abs(e.deltaY) < 30) return;
+                e.preventDefault();
+                
+                if (this.isTransitioning) return;
+                this.isTransitioning = true;
+                
+                if (e.deltaY > 0) this.next();
+                else this.prev();
+                
+                setTimeout(() => {
+                    this.isTransitioning = false;
+                }, 600);
+            }
+        }
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            new SlidePresentation();
+        });
+    </script>
+</body>
+</html>
